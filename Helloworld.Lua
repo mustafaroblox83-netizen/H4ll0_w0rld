@@ -1,8 +1,8 @@
 --[[
     ╔══════════════════════════════════════════╗
     ║         H4LL0 W0RLD HUB                 ║
-    ║      Rivals & Universal  •  v2.0        ║
-    ║         Fixed & Optimized               ║
+    ║      Rivals & Universal  •  v2.2        ║
+    ║     + Strong Lock, Aim Part, ESP HL     ║
     ╚══════════════════════════════════════════╝
 ]]
 
@@ -28,6 +28,7 @@ local C = {
     Border     = Color3.fromRGB(80,  20,  20),
     Blood      = Color3.fromRGB(140, 10,  10),
     Green      = Color3.fromRGB(50,  200, 120),
+    Gold       = Color3.fromRGB(255, 200, 50),
 }
 
 local Toggles = {
@@ -35,14 +36,17 @@ local Toggles = {
     Fly        = false,
     ESP        = false,
     Aimbot     = false,
+    StrongLock = false,
     WallCheck  = false,
     NoClip     = false,
     InfJump    = false,
 }
 
-local Connections = {}
-local Minimized   = false
-local VALID_KEY   = "Hello_world_code"
+local Connections  = {}
+local Minimized    = false
+local VALID_KEY    = "Hello_world_code"
+local AimPart      = "Head"
+local LockedTarget = nil
 
 local function New(class, props, parent)
     local obj = Instance.new(class)
@@ -72,14 +76,42 @@ local function StopAll()
         pcall(function() c:Disconnect() end)
         Connections[k] = nil
     end
+    LockedTarget = nil
 end
 
 local function GetChar()
     local char = LocalPlayer.Character
     if not char then return nil, nil, nil end
-    local hrp = char:FindFirstChild("HumanoidRootPart")
-    local hum = char:FindFirstChildOfClass("Humanoid")
-    return char, hrp, hum
+    return char, char:FindFirstChild("HumanoidRootPart"), char:FindFirstChildOfClass("Humanoid")
+end
+
+local function GetClosestTarget()
+    local cam = workspace.CurrentCamera
+    local closest, dist = nil, math.huge
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer and plr.Character then
+            local part = plr.Character:FindFirstChild(AimPart)
+            if part then
+                local d = (part.Position - cam.CFrame.Position).Magnitude
+                if d < dist then dist = d; closest = plr end
+            end
+        end
+    end
+    return closest
+end
+
+local function ClearESP()
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr.Character then
+            local root = plr.Character:FindFirstChild("HumanoidRootPart")
+            if root then
+                local bb = root:FindFirstChild("ESP_BB")
+                if bb then pcall(function() bb:Destroy() end) end
+            end
+            local hl = plr.Character:FindFirstChild("ESP_Highlight")
+            if hl then pcall(function() hl:Destroy() end) end
+        end
+    end
 end
 
 local function ApplyFeature(key, val)
@@ -106,8 +138,7 @@ local function ApplyFeature(key, val)
             pcall(function()
                 local bg = Instance.new("BodyGyro")
                 bg.MaxTorque = Vector3.new(1e9,1e9,1e9)
-                bg.P = 1e4
-                bg.Parent = hrp
+                bg.P = 1e4; bg.Parent = hrp
                 local bv = Instance.new("BodyVelocity")
                 bv.Velocity = Vector3.zero
                 bv.MaxForce = Vector3.new(1e9,1e9,1e9)
@@ -167,20 +198,34 @@ local function ApplyFeature(key, val)
                         local root = plr.Character:FindFirstChild("HumanoidRootPart")
                         if root and not root:FindFirstChild("ESP_BB") then
                             pcall(function()
+                                -- Nama label
                                 local bb = New("BillboardGui", {
                                     Name = "ESP_BB",
-                                    Size = UDim2.new(0,80,0,22),
-                                    StudsOffset = Vector3.new(0,3,0),
+                                    Size = UDim2.new(0,100,0,22),
+                                    StudsOffset = Vector3.new(0,3.5,0),
                                     AlwaysOnTop = true,
                                 }, root)
                                 New("TextLabel", {
                                     Size = UDim2.new(1,0,1,0),
                                     BackgroundTransparency = 1,
-                                    Text = plr.Name,
+                                    Text = "💀 "..plr.Name,
                                     TextColor3 = C.AccentGlow,
                                     TextSize = 12,
                                     Font = Enum.Font.GothamBold,
                                 }, bb)
+                            end)
+                        end
+                        -- Highlight badan
+                        if not plr.Character:FindFirstChild("ESP_Highlight") then
+                            pcall(function()
+                                local hl = Instance.new("Highlight")
+                                hl.Name = "ESP_Highlight"
+                                hl.FillColor = Color3.fromRGB(180, 20, 20)
+                                hl.OutlineColor = Color3.fromRGB(255, 50, 50)
+                                hl.FillTransparency = 0.5
+                                hl.OutlineTransparency = 0
+                                hl.Adornee = plr.Character
+                                hl.Parent = plr.Character
                             end)
                         end
                     end
@@ -191,34 +236,29 @@ local function ApplyFeature(key, val)
                 pcall(function() Connections.ESP:Disconnect() end)
                 Connections.ESP = nil
             end
-            for _, plr in ipairs(Players:GetPlayers()) do
-                if plr.Character then
-                    local root = plr.Character:FindFirstChild("HumanoidRootPart")
-                    if root then
-                        local bb = root:FindFirstChild("ESP_BB")
-                        if bb then pcall(function() bb:Destroy() end) end
-                    end
-                end
-            end
+            ClearESP()
         end
 
     elseif key == "Aimbot" then
         if val then
             Connections.Aimbot = RunService.Heartbeat:Connect(function()
                 local cam = workspace.CurrentCamera
-                local closest, dist = nil, math.huge
-                for _, plr in ipairs(Players:GetPlayers()) do
-                    if plr ~= LocalPlayer and plr.Character then
-                        local head = plr.Character:FindFirstChild("Head")
-                        if head then
-                            local d = (head.Position - cam.CFrame.Position).Magnitude
-                            if d < dist then dist = d; closest = head end
-                        end
+                local target = nil
+                if Toggles.StrongLock and LockedTarget then
+                    if LockedTarget.Character then
+                        target = LockedTarget.Character:FindFirstChild(AimPart)
+                    else
+                        LockedTarget = nil
+                    end
+                else
+                    local plr = GetClosestTarget()
+                    if plr and plr.Character then
+                        target = plr.Character:FindFirstChild(AimPart)
                     end
                 end
-                if closest then
+                if target then
                     pcall(function()
-                        cam.CFrame = CFrame.lookAt(cam.CFrame.Position, closest.Position)
+                        cam.CFrame = CFrame.lookAt(cam.CFrame.Position, target.Position)
                     end)
                 end
             end)
@@ -227,6 +267,22 @@ local function ApplyFeature(key, val)
                 pcall(function() Connections.Aimbot:Disconnect() end)
                 Connections.Aimbot = nil
             end
+        end
+
+    elseif key == "StrongLock" then
+        if val then
+            LockedTarget = GetClosestTarget()
+            Connections.StrongLock = RunService.Heartbeat:Connect(function()
+                if not LockedTarget or not LockedTarget.Character then
+                    LockedTarget = GetClosestTarget()
+                end
+            end)
+        else
+            if Connections.StrongLock then
+                pcall(function() Connections.StrongLock:Disconnect() end)
+                Connections.StrongLock = nil
+            end
+            LockedTarget = nil
         end
     end
 end
@@ -247,7 +303,6 @@ local KeyScreen = New("Frame", {
     BorderSizePixel = 0,
 }, GUI)
 
--- Blood drips deco
 for i = 1, 12 do
     local drip = New("Frame", {
         Size = UDim2.new(0,math.random(3,8),0,math.random(20,80)),
@@ -355,7 +410,6 @@ local KStatus = New("TextLabel", {
     Font = Enum.Font.Gotham,
 }, KeyScreen)
 
--- Skull flicker
 task.spawn(function()
     while flickLbl and flickLbl.Parent do
         task.wait(math.random(2,5))
@@ -389,15 +443,13 @@ local function BuildMain()
     KeyScreen:Destroy()
 
     local Win = New("Frame", {
-        Size = UDim2.new(0,560,0,400),
-        Position = UDim2.new(0.5,-280,0.5,-200),
+        Size = UDim2.new(0,560,0,420),
+        Position = UDim2.new(0.5,-280,0.5,-210),
         BackgroundColor3 = C.BG_Main,
-        BorderSizePixel = 0,
-        Active = true,
+        BorderSizePixel = 0, Active = true,
     }, GUI)
     Corner(Win, 12); Stroke(Win, C.Blood, 1.5)
 
-    -- Drag
     local drag, dStart, dPos = false, nil, nil
     Win.InputBegan:Connect(function(i)
         if i.UserInputType == Enum.UserInputType.MouseButton1 then
@@ -415,7 +467,6 @@ local function BuildMain()
         if i.UserInputType == Enum.UserInputType.MouseButton1 then drag = false end
     end)
 
-    -- TopBar
     local Top = New("Frame", {
         Size = UDim2.new(1,0,0,40),
         BackgroundColor3 = C.BG_Side,
@@ -454,7 +505,7 @@ local function BuildMain()
     Corner(CloseBtn, 5)
 
     CloseBtn.MouseButton1Click:Connect(function()
-        StopAll()
+        StopAll(); ClearESP()
         Tween(Win, {Size = UDim2.new(0,560,0,0)}, 0.3)
         task.wait(0.35); GUI:Destroy()
     end)
@@ -464,12 +515,11 @@ local function BuildMain()
             Tween(Win, {Size = UDim2.new(0,560,0,40)}, 0.3)
             MinBtn.Text = "□"
         else
-            Tween(Win, {Size = UDim2.new(0,560,0,400)}, 0.3)
+            Tween(Win, {Size = UDim2.new(0,560,0,420)}, 0.3)
             MinBtn.Text = "─"
         end
     end)
 
-    -- Content
     local CH = New("Frame", {
         Size = UDim2.new(1,0,1,-40), Position = UDim2.new(0,0,0,40),
         BackgroundTransparency = 1, ClipsDescendants = true,
@@ -559,14 +609,12 @@ local function BuildMain()
             BackgroundColor3 = C.BG_Card, BorderSizePixel = 0,
         }, parent)
         Corner(card, 8); Stroke(card, C.Border, 1)
-
         New("TextLabel", {
             Size=UDim2.new(1,-70,0,20), Position=UDim2.new(0,10,0,5),
             BackgroundTransparency=1, Text=label,
             TextColor3=C.TextMain, TextXAlignment=Enum.TextXAlignment.Left,
             TextSize=12, Font=Enum.Font.GothamBold,
         }, card)
-
         if desc then
             New("TextLabel", {
                 Size=UDim2.new(1,-70,0,16), Position=UDim2.new(0,10,0,26),
@@ -575,19 +623,16 @@ local function BuildMain()
                 TextSize=10, Font=Enum.Font.Gotham,
             }, card)
         end
-
         local tb = New("TextButton", {
             Size=UDim2.new(0,46,0,22), Position=UDim2.new(1,-54,0.5,-11),
             BackgroundColor3=C.OFF, Text="", BorderSizePixel=0,
         }, card)
         Corner(tb, 11)
-
         local circ = New("Frame", {
             Size=UDim2.new(0,16,0,16), Position=UDim2.new(0,3,0.5,-8),
             BackgroundColor3=Color3.fromRGB(255,220,220), BorderSizePixel=0,
         }, tb)
         Corner(circ, 8)
-
         tb.MouseButton1Click:Connect(function()
             Toggles[key] = not Toggles[key]
             Tween(tb, {BackgroundColor3 = Toggles[key] and C.ON or C.OFF}, 0.2)
@@ -596,22 +641,76 @@ local function BuildMain()
         end)
     end
 
-    -- ── Combat ──
+    -- ══════════════════════
+    --   💀 COMBAT PAGE
+    -- ══════════════════════
     local CP = Pages["Combat"]
-    Section(CP, "COMBAT")
-    Toggle(CP, "Aimbot",    "Aimbot",    "Auto aim ke kepala musuh terdekat")
-    Toggle(CP, "WallCheck", "WallCheck", "Cek musuh di balik tembok")
+    Section(CP, "AIMBOT")
+    Toggle(CP, "Aimbot",      "Aimbot",     "Auto aim ke target terdekat")
+    Toggle(CP, "Strong Lock", "StrongLock", "Lock kamera ke 1 target terus")
+
+    -- Aim Part Selector
+    local aimCard = New("Frame", {
+        Size=UDim2.new(1,0,0,52), BackgroundColor3=C.BG_Card, BorderSizePixel=0,
+    }, CP)
+    Corner(aimCard, 8); Stroke(aimCard, C.Border, 1)
+    New("TextLabel", {
+        Size=UDim2.new(1,0,0,22), Position=UDim2.new(0,10,0,5),
+        BackgroundTransparency=1, Text="🎯 Aim Part",
+        TextColor3=C.TextMain, TextXAlignment=Enum.TextXAlignment.Left,
+        TextSize=12, Font=Enum.Font.GothamBold,
+    }, aimCard)
+    local aimStatus = New("TextLabel", {
+        Size=UDim2.new(1,0,0,16), Position=UDim2.new(0,10,0,28),
+        BackgroundTransparency=1, Text="Target: HEAD 💀",
+        TextColor3=C.Gold, TextXAlignment=Enum.TextXAlignment.Left,
+        TextSize=10, Font=Enum.Font.GothamBold,
+    }, aimCard)
+    local headBtn = New("TextButton", {
+        Size=UDim2.new(0,55,0,22), Position=UDim2.new(1,-122,0.5,-11),
+        BackgroundColor3=C.Accent, Text="Head",
+        TextColor3=Color3.fromRGB(255,200,200),
+        TextSize=11, Font=Enum.Font.GothamBold, BorderSizePixel=0,
+    }, aimCard)
+    Corner(headBtn, 6)
+    local bodyBtn = New("TextButton", {
+        Size=UDim2.new(0,55,0,22), Position=UDim2.new(1,-60,0.5,-11),
+        BackgroundColor3=C.BG_Card, Text="Body",
+        TextColor3=C.TextSub,
+        TextSize=11, Font=Enum.Font.GothamBold, BorderSizePixel=0,
+    }, aimCard)
+    Corner(bodyBtn, 6); Stroke(bodyBtn, C.Border, 1)
+
+    headBtn.MouseButton1Click:Connect(function()
+        AimPart = "Head"
+        aimStatus.Text = "Target: HEAD 💀"
+        headBtn.BackgroundColor3 = C.Accent
+        headBtn.TextColor3 = Color3.fromRGB(255,200,200)
+        bodyBtn.BackgroundColor3 = C.BG_Card
+        bodyBtn.TextColor3 = C.TextSub
+    end)
+    bodyBtn.MouseButton1Click:Connect(function()
+        AimPart = "HumanoidRootPart"
+        aimStatus.Text = "Target: BODY 🫀"
+        bodyBtn.BackgroundColor3 = C.Accent
+        bodyBtn.TextColor3 = Color3.fromRGB(255,200,200)
+        headBtn.BackgroundColor3 = C.BG_Card
+        headBtn.TextColor3 = C.TextSub
+    end)
+
     Section(CP, "UTILITY")
+    Toggle(CP, "WallCheck", "WallCheck", "Cek musuh di balik tembok")
     Toggle(CP, "NoClip",    "NoClip",    "Jalan menembus tembok")
 
-    -- ── Movement ──
+    -- ══════════════════════
+    --   👟 MOVEMENT PAGE
+    -- ══════════════════════
     local MP = Pages["Movement"]
     Section(MP, "MOVEMENT")
     Toggle(MP, "Speed Hack", "SpeedHack", "WalkSpeed 16 → 60")
     Toggle(MP, "Fly",        "Fly",       "Terbang bebas (W/S/Space)")
     Toggle(MP, "Inf Jump",   "InfJump",   "Loncat tanpa batas")
     Section(MP, "TELEPORT")
-
     local tpCard = New("Frame", {
         Size=UDim2.new(1,0,0,40), BackgroundColor3=C.BG_Card, BorderSizePixel=0,
     }, MP)
@@ -641,12 +740,28 @@ local function BuildMain()
         end
     end)
 
-    -- ── Visual ──
+    -- ══════════════════════
+    --   👁 VISUAL PAGE
+    -- ══════════════════════
     local VP = Pages["Visual"]
-    Section(VP, "VISUAL")
-    Toggle(VP, "ESP", "ESP", "Highlight nama player di map")
+    Section(VP, "ESP")
+    Toggle(VP, "ESP", "ESP", "Nama + highlight merah di badan player")
 
-    -- ── Settings ──
+    local espInfo = New("Frame", {
+        Size=UDim2.new(1,0,0,44), BackgroundColor3=C.BG_Card, BorderSizePixel=0,
+    }, VP)
+    Corner(espInfo, 8); Stroke(espInfo, C.Border, 1)
+    New("TextLabel", {
+        Size=UDim2.new(1,-16,1,0), Position=UDim2.new(0,8,0,0),
+        BackgroundTransparency=1,
+        Text="👁  ESP menampilkan nama + highlight\nmerah di seluruh badan player.",
+        TextColor3=C.TextSub, TextXAlignment=Enum.TextXAlignment.Left,
+        TextSize=11, TextWrapped=true, Font=Enum.Font.Gotham,
+    }, espInfo)
+
+    -- ══════════════════════
+    --   ⚙ SETTINGS PAGE
+    -- ══════════════════════
     local SETP = Pages["Settings"]
     Section(SETP, "ABOUT")
     local about = New("Frame", {
@@ -656,7 +771,7 @@ local function BuildMain()
     New("TextLabel", {
         Size=UDim2.new(1,-16,1,0), Position=UDim2.new(0,8,0,0),
         BackgroundTransparency=1,
-        Text="💀  H4ll0 W0rld Hub  v2.0\nGame  :  Rivals & Universal\nDiscord: discord.gg/xCV9Tf4y5N",
+        Text="💀  H4ll0 W0rld Hub  v2.2\nGame  :  Rivals & Universal\nDiscord: discord.gg/xCV9Tf4y5N",
         TextColor3=C.TextSub, TextXAlignment=Enum.TextXAlignment.Left,
         TextSize=11, TextWrapped=true, Font=Enum.Font.Gotham,
     }, about)
@@ -669,7 +784,7 @@ local function BuildMain()
     }, SETP)
     Corner(stopBtn, 8)
     stopBtn.MouseButton1Click:Connect(function()
-        StopAll()
+        StopAll(); ClearESP()
         for k in pairs(Toggles) do Toggles[k] = false end
         stopBtn.Text = "✅ All Features Stopped"
         task.wait(2)
