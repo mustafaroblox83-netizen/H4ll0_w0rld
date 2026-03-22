@@ -1,8 +1,8 @@
 --[[
     ╔══════════════════════════════════════════╗
-    ║       H4LL0 W0RLD HUB V2               ║
-    ║      Rivals & Universal  •  v1.0        ║
-    ║         KEYLESS + ANTI DETECT           ║
+    ║         H4LL0 W0RLD HUB                 ║
+    ║      Rivals & Universal  •  v2.2        ║
+    ║     + Strong Lock, Aim Part, ESP HL     ║
     ╚══════════════════════════════════════════╝
 ]]
 
@@ -33,29 +33,20 @@ local C = {
 
 local Toggles = {
     SpeedHack  = false,
+    Fly        = false,
     ESP        = false,
     Aimbot     = false,
     StrongLock = false,
     WallCheck  = false,
-}
-
-local Settings = {
-    FOV        = 150,
-    CFrameSpeed= 0.15,
-    AimPart    = "Head",
+    NoClip     = false,
+    InfJump    = false,
 }
 
 local Connections  = {}
 local Minimized    = false
+local VALID_KEY    = "Hello_world_code"
+local AimPart      = "Head"
 local LockedTarget = nil
-
--- Anti Detect: randomize timing
-local function SafeCall(fn)
-    task.spawn(function()
-        task.wait(math.random(1, 5) * 0.001)
-        pcall(fn)
-    end)
-end
 
 local function New(class, props, parent)
     local obj = Instance.new(class)
@@ -97,26 +88,12 @@ end
 local function GetClosestTarget()
     local cam = workspace.CurrentCamera
     local closest, dist = nil, math.huge
-    local camPos = cam.CFrame.Position
-    local camLook = cam.CFrame.LookVector
-
     for _, plr in ipairs(Players:GetPlayers()) do
         if plr ~= LocalPlayer and plr.Character then
-            local part = plr.Character:FindFirstChild(Settings.AimPart)
+            local part = plr.Character:FindFirstChild(AimPart)
             if part then
-                -- FOV check
-                local screenPos, onScreen = cam:WorldToViewportPoint(part.Position)
-                if onScreen then
-                    local center = Vector2.new(cam.ViewportSize.X/2, cam.ViewportSize.Y/2)
-                    local screenDist = (Vector2.new(screenPos.X, screenPos.Y) - center).Magnitude
-                    if screenDist < Settings.FOV then
-                        local worldDist = (part.Position - camPos).Magnitude
-                        if worldDist < dist then
-                            dist = worldDist
-                            closest = plr
-                        end
-                    end
-                end
+                local d = (part.Position - cam.CFrame.Position).Magnitude
+                if d < dist then dist = d; closest = plr end
             end
         end
     end
@@ -131,7 +108,7 @@ local function ClearESP()
                 local bb = root:FindFirstChild("ESP_BB")
                 if bb then pcall(function() bb:Destroy() end) end
             end
-            local hl = plr.Character:FindFirstChild("ESP_HL")
+            local hl = plr.Character:FindFirstChild("ESP_Highlight")
             if hl then pcall(function() hl:Destroy() end) end
         end
     end
@@ -142,14 +119,74 @@ local function ApplyFeature(key, val)
     if not char then return end
 
     if key == "SpeedHack" then
-        -- Anti detect: randomize speed slightly
-        if hum then
-            if val then
-                SafeCall(function()
-                    hum.WalkSpeed = 60 + math.random(-2, 2)
+        if hum then hum.WalkSpeed = val and 60 or 16 end
+
+    elseif key == "InfJump" then
+        if val then
+            Connections.InfJump = UserInputService.JumpRequest:Connect(function()
+                if hum then hum:ChangeState(Enum.HumanoidStateType.Jumping) end
+            end)
+        else
+            if Connections.InfJump then
+                pcall(function() Connections.InfJump:Disconnect() end)
+                Connections.InfJump = nil
+            end
+        end
+
+    elseif key == "Fly" then
+        if val then
+            pcall(function()
+                local bg = Instance.new("BodyGyro")
+                bg.MaxTorque = Vector3.new(1e9,1e9,1e9)
+                bg.P = 1e4; bg.Parent = hrp
+                local bv = Instance.new("BodyVelocity")
+                bv.Velocity = Vector3.zero
+                bv.MaxForce = Vector3.new(1e9,1e9,1e9)
+                bv.Parent = hrp
+                Connections.Fly = RunService.Heartbeat:Connect(function()
+                    local cam = workspace.CurrentCamera
+                    if UserInputService:IsKeyDown(Enum.KeyCode.W) then
+                        bv.Velocity = cam.CFrame.LookVector * 40
+                    elseif UserInputService:IsKeyDown(Enum.KeyCode.S) then
+                        bv.Velocity = -cam.CFrame.LookVector * 40
+                    elseif UserInputService:IsKeyDown(Enum.KeyCode.Space) then
+                        bv.Velocity = Vector3.new(0,40,0)
+                    else
+                        bv.Velocity = Vector3.zero
+                    end
+                    bg.CFrame = cam.CFrame
                 end)
-            else
-                hum.WalkSpeed = 16
+            end)
+        else
+            if Connections.Fly then
+                pcall(function() Connections.Fly:Disconnect() end)
+                Connections.Fly = nil
+            end
+            if hrp then
+                for _, obj in ipairs(hrp:GetChildren()) do
+                    if obj:IsA("BodyGyro") or obj:IsA("BodyVelocity") then
+                        pcall(function() obj:Destroy() end)
+                    end
+                end
+            end
+        end
+
+    elseif key == "NoClip" then
+        if val then
+            Connections.NoClip = RunService.Stepped:Connect(function()
+                local c = LocalPlayer.Character
+                if c then
+                    for _, p in ipairs(c:GetDescendants()) do
+                        if p:IsA("BasePart") then
+                            pcall(function() p.CanCollide = false end)
+                        end
+                    end
+                end
+            end)
+        else
+            if Connections.NoClip then
+                pcall(function() Connections.NoClip:Disconnect() end)
+                Connections.NoClip = nil
             end
         end
 
@@ -161,9 +198,10 @@ local function ApplyFeature(key, val)
                         local root = plr.Character:FindFirstChild("HumanoidRootPart")
                         if root and not root:FindFirstChild("ESP_BB") then
                             pcall(function()
+                                -- Nama label
                                 local bb = New("BillboardGui", {
                                     Name = "ESP_BB",
-                                    Size = UDim2.new(0,110,0,24),
+                                    Size = UDim2.new(0,100,0,22),
                                     StudsOffset = Vector3.new(0,3.5,0),
                                     AlwaysOnTop = true,
                                 }, root)
@@ -177,10 +215,11 @@ local function ApplyFeature(key, val)
                                 }, bb)
                             end)
                         end
-                        if not plr.Character:FindFirstChild("ESP_HL") then
+                        -- Highlight badan
+                        if not plr.Character:FindFirstChild("ESP_Highlight") then
                             pcall(function()
                                 local hl = Instance.new("Highlight")
-                                hl.Name = "ESP_HL"
+                                hl.Name = "ESP_Highlight"
                                 hl.FillColor = Color3.fromRGB(180, 20, 20)
                                 hl.OutlineColor = Color3.fromRGB(255, 50, 50)
                                 hl.FillTransparency = 0.5
@@ -202,33 +241,24 @@ local function ApplyFeature(key, val)
 
     elseif key == "Aimbot" then
         if val then
-            Connections.Aimbot = RunService.RenderStepped:Connect(function()
+            Connections.Aimbot = RunService.Heartbeat:Connect(function()
                 local cam = workspace.CurrentCamera
                 local target = nil
-
                 if Toggles.StrongLock and LockedTarget then
                     if LockedTarget.Character then
-                        target = LockedTarget.Character:FindFirstChild(Settings.AimPart)
+                        target = LockedTarget.Character:FindFirstChild(AimPart)
                     else
                         LockedTarget = nil
                     end
-                end
-
-                if not target then
+                else
                     local plr = GetClosestTarget()
                     if plr and plr.Character then
-                        target = plr.Character:FindFirstChild(Settings.AimPart)
-                        if Toggles.StrongLock then
-                            LockedTarget = plr
-                        end
+                        target = plr.Character:FindFirstChild(AimPart)
                     end
                 end
-
                 if target then
                     pcall(function()
-                        -- Anti detect: pakai CFrame lerp bukan langsung snap
-                        local targetCF = CFrame.lookAt(cam.CFrame.Position, target.Position)
-                        cam.CFrame = cam.CFrame:Lerp(targetCF, Settings.CFrameSpeed)
+                        cam.CFrame = CFrame.lookAt(cam.CFrame.Position, target.Position)
                     end)
                 end
             end)
@@ -258,106 +288,128 @@ local function ApplyFeature(key, val)
 end
 
 -- ═══════════════════════════
---     LOADING SCREEN
+--        KEY SCREEN
 -- ═══════════════════════════
 local GUI = New("ScreenGui", {
-    Name = "H4ll0V2",
+    Name = "H4ll0W0rldHub",
     ResetOnSpawn = false,
     DisplayOrder = 999,
     ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
 }, game.CoreGui)
 
-local LoadFrame = New("Frame", {
+local KeyScreen = New("Frame", {
     Size = UDim2.new(1,0,1,0),
     BackgroundColor3 = C.BG_Main,
     BorderSizePixel = 0,
 }, GUI)
 
-for i = 1, 14 do
+for i = 1, 12 do
     local drip = New("Frame", {
-        Size = UDim2.new(0,math.random(3,9),0,math.random(20,90)),
+        Size = UDim2.new(0,math.random(3,8),0,math.random(20,80)),
         Position = UDim2.new(math.random(),0,0,0),
         BackgroundColor3 = C.Blood,
-        BackgroundTransparency = 0.35,
+        BackgroundTransparency = 0.4,
         BorderSizePixel = 0,
-    }, LoadFrame)
+    }, KeyScreen)
     Corner(drip, 3)
 end
 
 local flickLbl = New("TextLabel", {
     Size = UDim2.new(0,90,0,90),
-    Position = UDim2.new(0.5,-45,0.12,0),
+    Position = UDim2.new(0.5,-45,0.1,0),
     BackgroundTransparency = 1,
     Text = "💀", TextSize = 68,
     Font = Enum.Font.GothamBold,
-}, LoadFrame)
+}, KeyScreen)
 
 New("TextLabel", {
-    Size = UDim2.new(0,440,0,44),
-    Position = UDim2.new(0.5,-220,0.32,0),
+    Size = UDim2.new(0,400,0,44),
+    Position = UDim2.new(0.5,-200,0.3,0),
     BackgroundTransparency = 1,
-    Text = "H4LL0 W0RLD HUB V2",
+    Text = "H4LL0 W0RLD HUB",
     TextColor3 = C.Accent,
     TextSize = 28,
     Font = Enum.Font.GothamBold,
-}, LoadFrame)
+}, KeyScreen)
 
 New("TextLabel", {
-    Size = UDim2.new(0,440,0,24),
-    Position = UDim2.new(0.5,-220,0.42,0),
+    Size = UDim2.new(0,400,0,24),
+    Position = UDim2.new(0.5,-200,0.4,0),
     BackgroundTransparency = 1,
-    Text = "RIVALS & UNIVERSAL  •  KEYLESS",
+    Text = "ENTER KEY TO CONTINUE",
     TextColor3 = C.TextSub,
     TextSize = 12,
     Font = Enum.Font.Gotham,
-}, LoadFrame)
+}, KeyScreen)
 
-local BarBG = New("Frame", {
-    Size = UDim2.new(0,340,0,10),
-    Position = UDim2.new(0.5,-170,0.56,0),
+local KBG = New("Frame", {
+    Size = UDim2.new(0,340,0,32),
+    Position = UDim2.new(0.5,-170,0.5,0),
     BackgroundColor3 = C.BG_Card,
     BorderSizePixel = 0,
-}, LoadFrame)
-Corner(BarBG, 9)
+}, KeyScreen)
+Corner(KBG, 8); Stroke(KBG, C.Border, 1.5)
 
-local BarFill = New("Frame", {
-    Size = UDim2.new(0,0,1,0),
-    BackgroundColor3 = C.Accent,
+local KInput = New("TextBox", {
+    Size = UDim2.new(1,-14,1,0),
+    Position = UDim2.new(0,10,0,0),
+    BackgroundTransparency = 1,
+    PlaceholderText = "💀  Enter key...",
+    PlaceholderColor3 = C.TextDim,
+    Text = "",
+    TextColor3 = C.TextMain,
+    TextXAlignment = Enum.TextXAlignment.Left,
+    TextSize = 13,
+    Font = Enum.Font.GothamBold,
+    ClearTextOnFocus = false,
+}, KBG)
+
+local DiscordBtn = New("TextButton", {
+    Size = UDim2.new(0,130,0,28),
+    Position = UDim2.new(0.5,-170,0.62,0),
+    BackgroundColor3 = C.AccentDim,
+    Text = "💬 Get Key (Discord)",
+    TextColor3 = C.TextMain,
+    TextSize = 11,
+    Font = Enum.Font.GothamBold,
     BorderSizePixel = 0,
-}, BarBG)
-Corner(BarFill, 9)
+}, KeyScreen)
+Corner(DiscordBtn, 7); Stroke(DiscordBtn, C.Border, 1)
 
-local BarPct = New("TextLabel", {
-    Size = UDim2.new(0,340,0,20),
-    Position = UDim2.new(0.5,-170,0.59,0),
+local PasteBtn = New("TextButton", {
+    Size = UDim2.new(0,72,0,28),
+    Position = UDim2.new(0.5,-32,0.62,0),
+    BackgroundColor3 = C.BG_Card,
+    Text = "📋 Paste",
+    TextColor3 = C.TextMain,
+    TextSize = 11,
+    Font = Enum.Font.GothamBold,
+    BorderSizePixel = 0,
+}, KeyScreen)
+Corner(PasteBtn, 7); Stroke(PasteBtn, C.Border, 1)
+
+local EnterBtn = New("TextButton", {
+    Size = UDim2.new(0,72,0,28),
+    Position = UDim2.new(0.5,48,0.62,0),
+    BackgroundColor3 = C.Accent,
+    Text = "▶ Enter",
+    TextColor3 = Color3.fromRGB(255,200,200),
+    TextSize = 11,
+    Font = Enum.Font.GothamBold,
+    BorderSizePixel = 0,
+}, KeyScreen)
+Corner(EnterBtn, 7)
+
+local KStatus = New("TextLabel", {
+    Size = UDim2.new(0,340,0,22),
+    Position = UDim2.new(0.5,-170,0.7,0),
     BackgroundTransparency = 1,
-    Text = "0%", TextColor3 = C.Accent,
-    TextSize = 11, Font = Enum.Font.GothamBold,
-}, LoadFrame)
+    Text = "Enter key to proceed...",
+    TextColor3 = C.TextDim,
+    TextSize = 11,
+    Font = Enum.Font.Gotham,
+}, KeyScreen)
 
-local BarStatus = New("TextLabel", {
-    Size = UDim2.new(0,340,0,20),
-    Position = UDim2.new(0.5,-170,0.64,0),
-    BackgroundTransparency = 1,
-    Text = "Initializing...",
-    TextColor3 = C.TextSub,
-    TextSize = 11, Font = Enum.Font.Gotham,
-}, LoadFrame)
-
-local function LoadStep(txt, pct, w)
-    BarStatus.Text = txt
-    Tween(BarFill, {Size = UDim2.new(pct,0,1,0)}, 0.5)
-    local target = math.floor(pct*100)
-    local cur = tonumber(BarPct.Text:match("%d+")) or 0
-    for i = cur, target, 3 do
-        BarPct.Text = i.."%"
-        task.wait(0.01)
-    end
-    BarPct.Text = target.."%"
-    task.wait(w or 0.5)
-end
-
--- Skull flicker
 task.spawn(function()
     while flickLbl and flickLbl.Parent do
         task.wait(math.random(2,5))
@@ -370,14 +422,29 @@ task.spawn(function()
     end
 end)
 
+DiscordBtn.MouseButton1Click:Connect(function()
+    pcall(function() setclipboard("https://discord.gg/xCV9Tf4y5N") end)
+    DiscordBtn.Text = "✓ Copied!"
+    DiscordBtn.BackgroundColor3 = C.Green
+    task.wait(2)
+    DiscordBtn.Text = "💬 Get Key (Discord)"
+    DiscordBtn.BackgroundColor3 = C.AccentDim
+end)
+
+PasteBtn.MouseButton1Click:Connect(function()
+    local ok, cb = pcall(getclipboard)
+    if ok and cb and cb ~= "" then KInput.Text = cb end
+end)
+
 -- ═══════════════════════════
 --        MAIN GUI
 -- ═══════════════════════════
 local function BuildMain()
+    KeyScreen:Destroy()
 
     local Win = New("Frame", {
-        Size = UDim2.new(0,580,0,430),
-        Position = UDim2.new(0.5,-290,0.5,-215),
+        Size = UDim2.new(0,560,0,420),
+        Position = UDim2.new(0.5,-280,0.5,-210),
         BackgroundColor3 = C.BG_Main,
         BorderSizePixel = 0, Active = true,
     }, GUI)
@@ -415,27 +482,11 @@ local function BuildMain()
         BackgroundTransparency = 1, Text = "💀", TextSize = 20, ZIndex = 6,
     }, Top)
     New("TextLabel", {
-        Size = UDim2.new(0,280,1,0), Position = UDim2.new(0,40,0,0),
-        BackgroundTransparency = 1, Text = "H4ll0 W0rld Hub V2",
+        Size = UDim2.new(0,260,1,0), Position = UDim2.new(0,40,0,0),
+        BackgroundTransparency = 1, Text = "H4ll0 W0rld Hub",
         TextColor3 = C.Accent, TextXAlignment = Enum.TextXAlignment.Left,
         TextSize = 14, Font = Enum.Font.GothamBold, ZIndex = 6,
     }, Top)
-
-    -- Keyless badge
-    local badge = New("Frame", {
-        Size = UDim2.new(0,65,0,20),
-        Position = UDim2.new(0,326,0.5,-10),
-        BackgroundColor3 = Color3.fromRGB(20,40,10),
-        BorderSizePixel = 0, ZIndex = 6,
-    }, Top)
-    Corner(badge, 5); Stroke(badge, C.Green, 1)
-    New("TextLabel", {
-        Size = UDim2.new(1,0,1,0),
-        BackgroundTransparency = 1,
-        Text = "✅ KEYLESS",
-        TextColor3 = C.Green,
-        TextSize = 9, Font = Enum.Font.GothamBold, ZIndex = 7,
-    }, badge)
 
     local MinBtn = New("TextButton", {
         Size = UDim2.new(0,26,0,20), Position = UDim2.new(1,-60,0.5,-10),
@@ -455,16 +506,16 @@ local function BuildMain()
 
     CloseBtn.MouseButton1Click:Connect(function()
         StopAll(); ClearESP()
-        Tween(Win, {Size = UDim2.new(0,580,0,0)}, 0.3)
+        Tween(Win, {Size = UDim2.new(0,560,0,0)}, 0.3)
         task.wait(0.35); GUI:Destroy()
     end)
     MinBtn.MouseButton1Click:Connect(function()
         Minimized = not Minimized
         if Minimized then
-            Tween(Win, {Size = UDim2.new(0,580,0,40)}, 0.3)
+            Tween(Win, {Size = UDim2.new(0,560,0,40)}, 0.3)
             MinBtn.Text = "□"
         else
-            Tween(Win, {Size = UDim2.new(0,580,0,430)}, 0.3)
+            Tween(Win, {Size = UDim2.new(0,560,0,420)}, 0.3)
             MinBtn.Text = "─"
         end
     end)
@@ -475,7 +526,7 @@ local function BuildMain()
     }, Win)
 
     local Side = New("Frame", {
-        Size = UDim2.new(0,135,1,0),
+        Size = UDim2.new(0,130,1,0),
         BackgroundColor3 = C.BG_Side, BorderSizePixel = 0,
     }, CH)
     Stroke(Side, C.Border, 1)
@@ -487,7 +538,7 @@ local function BuildMain()
     }, Side)
 
     local CA = New("Frame", {
-        Size = UDim2.new(1,-135,1,0), Position = UDim2.new(0,135,0,0),
+        Size = UDim2.new(1,-130,1,0), Position = UDim2.new(0,130,0,0),
         BackgroundColor3 = C.BG_Content, BorderSizePixel = 0,
         ClipsDescendants = true,
     }, CH)
@@ -524,7 +575,7 @@ local function BuildMain()
         end
     end
 
-    for _, t in ipairs({{"Combat","💀"},{"Visual","👁"},{"Settings","⚙"}}) do
+    for _, t in ipairs({{"Combat","💀"},{"Movement","👟"},{"Visual","👁"},{"Settings","⚙"}}) do
         MakePage(t[1])
         local btn = New("TextButton", {
             Size = UDim2.new(1,0,0,32),
@@ -590,95 +641,15 @@ local function BuildMain()
         end)
     end
 
-    -- Slider Builder
-    local function Slider(parent, label, minVal, maxVal, default, settingKey, suffix)
-        local card = New("Frame", {
-            Size=UDim2.new(1,0,0,62), BackgroundColor3=C.BG_Card, BorderSizePixel=0,
-        }, parent)
-        Corner(card, 8); Stroke(card, C.Border, 1)
-
-        New("TextLabel", {
-            Size=UDim2.new(1,0,0,20), Position=UDim2.new(0,10,0,5),
-            BackgroundTransparency=1, Text=label,
-            TextColor3=C.TextMain, TextXAlignment=Enum.TextXAlignment.Left,
-            TextSize=12, Font=Enum.Font.GothamBold,
-        }, card)
-
-        local valLbl = New("TextLabel", {
-            Size=UDim2.new(0,60,0,20), Position=UDim2.new(1,-65,0,5),
-            BackgroundTransparency=1,
-            Text=tostring(default)..(suffix or ""),
-            TextColor3=C.Gold, TextXAlignment=Enum.TextXAlignment.Right,
-            TextSize=11, Font=Enum.Font.GothamBold,
-        }, card)
-
-        local trackBG = New("Frame", {
-            Size=UDim2.new(1,-20,0,8),
-            Position=UDim2.new(0,10,0,36),
-            BackgroundColor3=C.BG_Main, BorderSizePixel=0,
-        }, card)
-        Corner(trackBG, 4)
-
-        local trackFill = New("Frame", {
-            Size=UDim2.new((default-minVal)/(maxVal-minVal),0,1,0),
-            BackgroundColor3=C.Accent, BorderSizePixel=0,
-        }, trackBG)
-        Corner(trackFill, 4)
-
-        local thumb = New("Frame", {
-            Size=UDim2.new(0,16,0,16),
-            Position=UDim2.new((default-minVal)/(maxVal-minVal),0,0.5,-8),
-            BackgroundColor3=Color3.fromRGB(255,200,200), BorderSizePixel=0,
-        }, trackBG)
-        Corner(thumb, 8)
-
-        local sliding = false
-        trackBG.InputBegan:Connect(function(i)
-            if i.UserInputType == Enum.UserInputType.MouseButton1 or
-               i.UserInputType == Enum.UserInputType.Touch then
-                sliding = true
-            end
-        end)
-        UserInputService.InputEnded:Connect(function(i)
-            if i.UserInputType == Enum.UserInputType.MouseButton1 or
-               i.UserInputType == Enum.UserInputType.Touch then
-                sliding = false
-            end
-        end)
-        UserInputService.InputChanged:Connect(function(i)
-            if sliding and (i.UserInputType == Enum.UserInputType.MouseMovement or
-                            i.UserInputType == Enum.UserInputType.Touch) then
-                local abs = trackBG.AbsolutePosition
-                local size = trackBG.AbsoluteSize
-                local rel = math.clamp((i.Position.X - abs.X) / size.X, 0, 1)
-                local val = math.floor(minVal + (maxVal - minVal) * rel)
-                if settingKey == "CFrameSpeed" then
-                    val = math.floor((minVal + (maxVal - minVal) * rel) * 100) / 100
-                end
-                Settings[settingKey] = val
-                valLbl.Text = tostring(val)..(suffix or "")
-                trackFill.Size = UDim2.new(rel, 0, 1, 0)
-                thumb.Position = UDim2.new(rel, -8, 0.5, -8)
-            end
-        end)
-        return card
-    end
-
     -- ══════════════════════
     --   💀 COMBAT PAGE
     -- ══════════════════════
     local CP = Pages["Combat"]
     Section(CP, "AIMBOT")
-    Toggle(CP, "Aimbot",      "Aimbot",     "Auto aim dalam FOV")
+    Toggle(CP, "Aimbot",      "Aimbot",     "Auto aim ke target terdekat")
     Toggle(CP, "Strong Lock", "StrongLock", "Lock kamera ke 1 target terus")
 
-    -- FOV Slider
-    Slider(CP, "🎯 FOV Aimbot", 50, 500, 150, "FOV", " px")
-
-    -- CFrame Speed Slider
-    Slider(CP, "⚡ CFrame Speed", 1, 100, 15, "CFrameSpeed", "%")
-
-    -- Aim Part
+    -- Aim Part Selector
     local aimCard = New("Frame", {
         Size=UDim2.new(1,0,0,52), BackgroundColor3=C.BG_Card, BorderSizePixel=0,
     }, CP)
@@ -711,7 +682,7 @@ local function BuildMain()
     Corner(bodyBtn, 6); Stroke(bodyBtn, C.Border, 1)
 
     headBtn.MouseButton1Click:Connect(function()
-        Settings.AimPart = "Head"
+        AimPart = "Head"
         aimStatus.Text = "Target: HEAD 💀"
         headBtn.BackgroundColor3 = C.Accent
         headBtn.TextColor3 = Color3.fromRGB(255,200,200)
@@ -719,7 +690,7 @@ local function BuildMain()
         bodyBtn.TextColor3 = C.TextSub
     end)
     bodyBtn.MouseButton1Click:Connect(function()
-        Settings.AimPart = "HumanoidRootPart"
+        AimPart = "HumanoidRootPart"
         aimStatus.Text = "Target: BODY 🫀"
         bodyBtn.BackgroundColor3 = C.Accent
         bodyBtn.TextColor3 = Color3.fromRGB(255,200,200)
@@ -729,42 +700,78 @@ local function BuildMain()
 
     Section(CP, "UTILITY")
     Toggle(CP, "WallCheck", "WallCheck", "Cek musuh di balik tembok")
-    Toggle(CP, "Speed Hack", "SpeedHack", "WalkSpeed anti detect")
+    Toggle(CP, "NoClip",    "NoClip",    "Jalan menembus tembok")
+
+    -- ══════════════════════
+    --   👟 MOVEMENT PAGE
+    -- ══════════════════════
+    local MP = Pages["Movement"]
+    Section(MP, "MOVEMENT")
+    Toggle(MP, "Speed Hack", "SpeedHack", "WalkSpeed 16 → 60")
+    Toggle(MP, "Fly",        "Fly",       "Terbang bebas (W/S/Space)")
+    Toggle(MP, "Inf Jump",   "InfJump",   "Loncat tanpa batas")
+    Section(MP, "TELEPORT")
+    local tpCard = New("Frame", {
+        Size=UDim2.new(1,0,0,40), BackgroundColor3=C.BG_Card, BorderSizePixel=0,
+    }, MP)
+    Corner(tpCard, 8); Stroke(tpCard, C.Border, 1)
+    New("TextLabel", {
+        Size=UDim2.new(1,-80,1,0), Position=UDim2.new(0,10,0,0),
+        BackgroundTransparency=1, Text="💀 Teleport to Spawn",
+        TextColor3=C.TextMain, TextXAlignment=Enum.TextXAlignment.Left,
+        TextSize=12, Font=Enum.Font.GothamBold,
+    }, tpCard)
+    local tpBtn = New("TextButton", {
+        Size=UDim2.new(0,62,0,24), Position=UDim2.new(1,-72,0.5,-12),
+        BackgroundColor3=C.Accent, Text="Teleport",
+        TextColor3=Color3.fromRGB(255,200,200),
+        TextSize=11, Font=Enum.Font.GothamBold, BorderSizePixel=0,
+    }, tpCard)
+    Corner(tpBtn, 6)
+    tpBtn.MouseButton1Click:Connect(function()
+        local _, hrp, _ = GetChar()
+        if hrp then
+            hrp.CFrame = CFrame.new(0,10,0)
+            tpBtn.Text = "✓ Done"
+            tpBtn.BackgroundColor3 = C.Green
+            task.wait(1.5)
+            tpBtn.Text = "Teleport"
+            tpBtn.BackgroundColor3 = C.Accent
+        end
+    end)
 
     -- ══════════════════════
     --   👁 VISUAL PAGE
     -- ══════════════════════
     local VP = Pages["Visual"]
     Section(VP, "ESP")
-    Toggle(VP, "ESP + Highlight", "ESP", "Nama + highlight merah di badan player")
+    Toggle(VP, "ESP", "ESP", "Nama + highlight merah di badan player")
+
+    local espInfo = New("Frame", {
+        Size=UDim2.new(1,0,0,44), BackgroundColor3=C.BG_Card, BorderSizePixel=0,
+    }, VP)
+    Corner(espInfo, 8); Stroke(espInfo, C.Border, 1)
+    New("TextLabel", {
+        Size=UDim2.new(1,-16,1,0), Position=UDim2.new(0,8,0,0),
+        BackgroundTransparency=1,
+        Text="👁  ESP menampilkan nama + highlight\nmerah di seluruh badan player.",
+        TextColor3=C.TextSub, TextXAlignment=Enum.TextXAlignment.Left,
+        TextSize=11, TextWrapped=true, Font=Enum.Font.Gotham,
+    }, espInfo)
 
     -- ══════════════════════
     --   ⚙ SETTINGS PAGE
     -- ══════════════════════
     local SETP = Pages["Settings"]
-    Section(SETP, "ANTI DETECT")
-
-    local adCard = New("Frame", {
-        Size=UDim2.new(1,0,0,70), BackgroundColor3=C.BG_Card, BorderSizePixel=0,
-    }, SETP)
-    Corner(adCard, 8); Stroke(adCard, C.Green, 1.5)
-    New("TextLabel", {
-        Size=UDim2.new(1,-16,1,0), Position=UDim2.new(0,8,0,0),
-        BackgroundTransparency=1,
-        Text="🛡️  Anti Detect AKTIF\n• CFrame Lerp (smooth aim)\n• Random speed offset\n• Random execution delay",
-        TextColor3=C.Green, TextXAlignment=Enum.TextXAlignment.Left,
-        TextSize=11, TextWrapped=true, Font=Enum.Font.Gotham,
-    }, adCard)
-
     Section(SETP, "ABOUT")
     local about = New("Frame", {
-        Size=UDim2.new(1,0,0,80), BackgroundColor3=C.BG_Card, BorderSizePixel=0,
+        Size=UDim2.new(1,0,0,90), BackgroundColor3=C.BG_Card, BorderSizePixel=0,
     }, SETP)
     Corner(about, 8); Stroke(about, C.Blood, 1.5)
     New("TextLabel", {
         Size=UDim2.new(1,-16,1,0), Position=UDim2.new(0,8,0,0),
         BackgroundTransparency=1,
-        Text="💀  H4ll0 W0rld Hub V2  v1.0\nGame   : Rivals & Universal\nStatus : Keyless ✅\nDiscord: discord.gg/xCV9Tf4y5N",
+        Text="💀  H4ll0 W0rld Hub  v2.2\nGame  :  Rivals & Universal\nDiscord: discord.gg/xCV9Tf4y5N",
         TextColor3=C.TextSub, TextXAlignment=Enum.TextXAlignment.Left,
         TextSize=11, TextWrapped=true, Font=Enum.Font.Gotham,
     }, about)
@@ -788,24 +795,30 @@ local function BuildMain()
 end
 
 -- ═══════════════════════════
---      RUN LOADING
+--      KEY VALIDATION
 -- ═══════════════════════════
-task.spawn(function()
-    LoadStep("💀 Initializing...",       0.15, 0.4)
-    LoadStep("🔗 Bypassing checks...",   0.35, 0.4)
-    LoadStep("🛡️  Loading anti detect...",0.55, 0.4)
-    LoadStep("⚡ Setting up features...", 0.78, 0.35)
-    LoadStep("✅  Ready!",               1.00, 0.3)
-
-    for _, obj in ipairs(LoadFrame:GetDescendants()) do
-        pcall(function()
-            if obj:IsA("TextLabel") then Tween(obj,{TextTransparency=1},0.4) end
-            if obj:IsA("Frame") then Tween(obj,{BackgroundTransparency=1},0.4) end
-        end)
+EnterBtn.MouseButton1Click:Connect(function()
+    if KInput.Text == VALID_KEY then
+        KStatus.Text = "✅ Key Valid! Loading..."
+        KStatus.TextColor3 = C.Green
+        for _, obj in ipairs(KeyScreen:GetDescendants()) do
+            pcall(function()
+                if obj:IsA("TextLabel") or obj:IsA("TextButton") then
+                    Tween(obj, {TextTransparency=1}, 0.3)
+                end
+                if obj:IsA("Frame") then
+                    Tween(obj, {BackgroundTransparency=1}, 0.3)
+                end
+            end)
+        end
+        Tween(KeyScreen, {BackgroundTransparency=1}, 0.3)
+        task.wait(0.5)
+        BuildMain()
+    else
+        KStatus.Text = "❌ Key salah! Join Discord untuk key."
+        KStatus.TextColor3 = C.Accent
+        Tween(KBG, {BackgroundColor3=Color3.fromRGB(40,8,8)}, 0.2)
+        task.wait(0.3)
+        Tween(KBG, {BackgroundColor3=C.BG_Card}, 0.2)
     end
-    Tween(LoadFrame, {BackgroundTransparency=1}, 0.4)
-    task.wait(0.5)
-    LoadFrame:Destroy()
-
-    BuildMain()
 end)
